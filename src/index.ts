@@ -16,12 +16,28 @@ export interface VikeAuthConfig extends Omit<AuthConfig, "raw"> {
   prefix?: string;
 }
 
+function getVikeAuthConfig(config: VikeAuthConfig): { prefix: string, authOptions: VikeAuthConfig } {
+  const { prefix = "/api/auth", ...authOptions } = config;
+  authOptions.secret ??= env.AUTH_SECRET;
+  authOptions.trustHost ??= !!(
+    env.AUTH_TRUST_HOST ??
+    env.VERCEL ??
+    env.NODE_ENV !== "production"
+  );
+  authOptions.basePath ??= prefix;
+
+  return {
+    prefix,
+    authOptions
+  }
+}
+
 const env: Record<string, string | undefined> =
   typeof process?.env !== "undefined"
     ? process.env
     : typeof import.meta?.env !== "undefined"
-    ? import.meta.env
-    : {};
+      ? import.meta.env
+      : {};
 
 const actions: AuthAction[] = [
   "providers",
@@ -57,28 +73,21 @@ function VikeAuthHandler(prefix: string, authOptions: VikeAuthConfig) {
 }
 
 export function VikeAuth(config: VikeAuthConfig) {
-  const { prefix = "/api/auth", ...authOptions } = config;
-  authOptions.secret ??= env.AUTH_SECRET;
-  authOptions.trustHost ??= !!(
-    env.AUTH_TRUST_HOST ??
-    env.VERCEL ??
-    env.NODE_ENV !== "production"
-  );
-  authOptions.basePath ??= prefix;
-  return VikeAuthHandler(prefix, authOptions);
+  const { prefix, authOptions } = getVikeAuthConfig(config)
+
+  return VikeAuthHandler(prefix!, authOptions);
 }
 
 export async function getSession(
   req: Request,
   options: Omit<AuthConfig, "raw">
 ): Promise<Session | null> {
-  options.secret ??= env.AUTH_SECRET;
-  options.trustHost ??= true;
+  const { authOptions } = getVikeAuthConfig(options)
 
-  const url = new URL("/api/auth/session", req.url);
+  const url = new URL(`${authOptions.basePath}/session`, req.url);
   const response = await Auth(
     new Request(url, { headers: req.headers }),
-    options
+    authOptions
   );
 
   const { status = 200 } = response;
